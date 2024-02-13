@@ -11,12 +11,12 @@ document.body.appendChild(renderer.domElement);
 
 // Parameters
 const N = 32; // Number of points
-let R = 150; // Radius
-const R2 = 200; // Radius 2
+let R = 200; // Radius
+let R2 = 200; // Radius 2
 
 // set different speeds for each layer
-const speed = 0.001;
-const speed2 = 0.0015;
+const speed = 0.0001;
+const speed2 = 0.001;
 
 const centerPoint = new THREE.Vector2(0, 0); // Center point
 let points = [];
@@ -24,6 +24,7 @@ let points2 = [];
 const material = new THREE.MeshBasicMaterial({ color: 0x7700ff });
 
 const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffff00 });
+
 
 // Create N points around the center
 for (let i = 0; i < N; i++) {
@@ -74,11 +75,12 @@ for (let i = 0; i < N; i++) {
 const animate = function () {
     requestAnimationFrame(animate);
 
-    // vacillate the radius of the inner layer between 10 and 250
-    R = 120 + 100 * Math.sin(Date.now() * 0.001);
+    // slowly increment the radius of the circles proportionally to the window size
+    R = window.innerWidth / 4 + 100 * Math.sin(Date.now() * 0.001);
+    R2 = window.innerWidth / 4 + 100 * Math.sin(Date.now() * 0.001);
 
     // slowly increment the hue of the line colors
-    lineMaterial.color.setHSL((Date.now() * 0.0001) % 1, 1, 0.5);
+    lineMaterial.color.setHSL((Date.now() * 0.0001) % 1, 1, 0.8);
 
     // Update position of each point to rotate around the center
     points.forEach((point, index) => {
