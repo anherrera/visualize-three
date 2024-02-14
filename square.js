@@ -1,125 +1,115 @@
 import * as THREE from 'three';
+import { MapControls } from "three/addons/controls/MapControls";
+import {Object3D} from "three";
+
 
 // Scene setup
 const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x000000, 1, 250);
 const camera= new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.z = 40;
+camera.position.x = 25;
 
+
+// renderer
 const renderer = new THREE.WebGLRenderer();
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-// make a square
+// map controls
+const controls = new MapControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+// constants
 const boxWidth = 16;
-const segments = 16;
-const lineArtShift = segments;
+const segments = 32;
+const lineArtShift = 32;
 
-// make a transparent square
-const geometry = new THREE.PlaneGeometry(boxWidth, boxWidth, segments, segments);
-const material = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0 });
-const square = new THREE.Mesh(geometry, material);
-
-// edges
-const edges = new THREE.EdgesGeometry(square.geometry);
-
-// get the vertices of the square
-const vertices = square.geometry.getAttribute('position').array;
-
-// edge vertices
-const edgeVertices = edges.getAttribute('position').array;
-
-// filter vertices by intersection with edges
-const verticesOnEdges = [];
-for (let i = 0; i < vertices.length; i += 3) {
-    for (let j = 0; j < edgeVertices.length; j += 3) {
-        if (vertices[i] === edgeVertices[j] && vertices[i + 1] === edgeVertices[j + 1] && vertices[i + 2] === edgeVertices[j + 2]) {
-            verticesOnEdges.push(vertices[i], vertices[i + 1], vertices[i + 2]);
+const createPlane = (size, color) => {
+    const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
+    const material = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0 });
+    const square = new THREE.Mesh(geometry, material);
+    const edges = new THREE.EdgesGeometry(square.geometry);
+    const vertices = square.geometry.getAttribute('position').array;
+    const edgeVertices = edges.getAttribute('position').array;
+    const verticesOnEdges = [];
+    for (let i = 0; i < vertices.length; i += 3) {
+        for (let j = 0; j < edgeVertices.length; j += 3) {
+            if (vertices[i] === edgeVertices[j] && vertices[i + 1] === edgeVertices[j + 1] && vertices[i + 2] === edgeVertices[j + 2]) {
+                verticesOnEdges.push(vertices[i], vertices[i + 1], vertices[i + 2]);
+            }
         }
     }
+
+    const vertices2d = [];
+    for (let i = 0; i < verticesOnEdges.length; i += 3) {
+        vertices2d.push([verticesOnEdges[i], verticesOnEdges[i + 1]]);
+    }
+    vertices2d.sort((a, b) => Math.atan2(a[1], a[0]) - Math.atan2(b[1], b[0]));
+    vertices2d.reverse();
+    const topLeft = vertices2d.reduce((a, b) => a[1] > b[1] || (a[1] === b[1] && a[0] < b[0]) ? a : b);
+    while (vertices2d[0] !== topLeft) {
+        vertices2d.push(vertices2d.shift());
+    }
+
+    const lineMaterial = new THREE.LineBasicMaterial({ color: color });
+    const lines = [];
+    for (let i = 0; i < vertices2d.length; i++) {
+        const from = vertices2d[i];
+        const to = vertices2d[(i + segments + lineArtShift) % vertices2d.length];
+        const points = [
+            new THREE.Vector2(from[0], from[1]),
+            new THREE.Vector2(to[0], to[1])
+        ];
+        const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+        lines[i] = new THREE.Line(lineGeometry, lineMaterial);
+    }
+    lines.forEach(line => {
+        square.add(line)
+    });
+
+    return square;
 }
 
+const createFaces = () => {
+    // Face 1
+    let face1 = createPlane(boxWidth, 'green');
+    face1.position.z = -boxWidth / 2;
+    // Face 2
+    let face2 = createPlane(boxWidth, 'red');
+    face2.position.z = boxWidth / 2;
+    // Face 3
+    let face3 = createPlane(boxWidth, 'white');
+    face3.position.x = boxWidth / 2;
+    face3.rotation.y = Math.PI / 2;
+    // Face 4
+    let face4 = createPlane(boxWidth, 'yellow');
+    face4.position.x = -boxWidth / 2;
+    face4.rotation.y = Math.PI / 2;
+    // Face 5
+    let face5 = createPlane(boxWidth, 0x1759ff);
+    face5.position.y = boxWidth / 2;
+    face5.rotation.x = Math.PI / 2;
+    // Face 6
+    let face6 = createPlane(boxWidth, 'orange');
+    face6.position.y = -boxWidth / 2;
+    face6.rotation.x = Math.PI / 2;
 
-// 2d vertices
-const vertices2d = [];
-for (let i = 0; i < verticesOnEdges.length; i += 3) {
-    vertices2d.push([verticesOnEdges[i], verticesOnEdges[i + 1]]);
+    return [face1, face2, face3, face4, face5, face6];
 }
 
-// now sort vertices2d by angle, and reverse
-vertices2d.sort((a, b) => Math.atan2(a[1], a[0]) - Math.atan2(b[1], b[0]));
-vertices2d.reverse();
+let faces = createFaces();
+let cube = new Object3D();
+cube.add(...faces);
 
-// make the first 2d vertex the one with the highest y and lowest x, where x is [0] and y is [1]
-const topLeft = vertices2d.reduce((a, b) => a[1] > b[1] || (a[1] === b[1] && a[0] < b[0]) ? a : b);
-
-// rotate the array so that the top left vertex is first
-while (vertices2d[0] !== topLeft) {
-    vertices2d.push(vertices2d.shift());
-}
-
-// now draw line art.
-// each vertex goes to the vertex at index + (segments+1).
-// the vertex at vertices2d.length - segments goes to the first vertex
-const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffff00 });
-const lines = [];
-for (let i = 0; i < vertices2d.length; i++) {
-    const from = vertices2d[i];
-    const to = vertices2d[(i + segments + lineArtShift) % vertices2d.length];
-
-    const points = [
-        new THREE.Vector2(from[0], from[1]),
-        new THREE.Vector2(to[0], to[1])
-    ];
-    const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
-
-    lines[i] = new THREE.Line(lineGeometry, lineMaterial);
-}
-
-
-lines.forEach(line => {
-    square.add(line)
-});
-
-// make a cube out of 6 instances of the square
-const cube = new THREE.Group();
-const squares = [];
-for (let i = 0; i < 6; i++) {
-    squares[i] = square.clone();
-    cube.add(squares[i]);
-}
-// rotate the squares to make a cube, with the squares being the faces
-squares[0].rotation.x = Math.PI / 2;
-squares[0].position.z = boxWidth/2;
-squares[0].position.y = boxWidth/2;
-squares[1].rotation.x = -Math.PI / 2;
-squares[1].position.z = boxWidth/2;
-squares[1].position.y = -boxWidth/2;
-squares[2].position.z = boxWidth;
-squares[3].rotation.y = Math.PI / 2;
-squares[3].position.x = boxWidth/2;
-squares[3].position.z = boxWidth/2;
-squares[4].rotation.y = -Math.PI / 2;
-squares[4].position.x = -boxWidth/2;
-squares[4].position.z = boxWidth/2;
+cube.rotateY(45);
+cube.rotateX(45);
 
 scene.add(cube);
 
-
-// Animation function to move points along the path of the square.
 const animate = function () {
     requestAnimationFrame(animate);
 
-    cube.rotateZ(0.0007);
-    cube.rotateY(0.0001);
-    cube.rotateX(0.0005);
-
-    // hue-shift each face of the cube separately
-    squares.forEach((square, sq) => {
-        square.children.forEach((line, index) => {
-            line.material.color.setHSL((Date.now() * 0.0001) % sq, 1, 0.8);
-        });
-    });
-
+    cube.rotateZ(0.001);
 
     renderer.render(scene, camera);
 };
