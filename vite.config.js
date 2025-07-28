@@ -15,7 +15,9 @@ export default defineConfig({
         sphere: resolve(__dirname, 'sphere.html'),
         square: resolve(__dirname, 'square.html'),
         curve: resolve(__dirname, 'curve.html'),
-        audio: resolve(__dirname, 'audio.html')
+        audio: resolve(__dirname, 'audio.html'),
+        galaxy: resolve(__dirname, 'galaxy.html'),
+        boids: resolve(__dirname, 'boids.html')
       }
     }
   }

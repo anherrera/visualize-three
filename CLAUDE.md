@@ -33,6 +33,7 @@ The project supports multiple routes for different visualizations:
 - `/sphere` - Nested wireframe spheres with connecting lines
 - `/curve` - Basic wireframe cube demo
 - `/audio` - Audio-reactive visualization with microphone input
+- `/galaxy` - Spiral galaxy with pulsing star that reacts to audio
 
 In development, access these routes at:
 - `localhost:5173/`
@@ -40,6 +41,7 @@ In development, access these routes at:
 - `localhost:5173/sphere.html`
 - `localhost:5173/curve.html`
 - `localhost:5173/audio.html`
+- `localhost:5173/galaxy.html`
 
 ### Three.js Usage
 - Uses Three.js v0.161.0

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 // Scene setup
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x000033, 0.0008);
+scene.fog = new THREE.FogExp2(0x000011, 0.0003);
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
 camera.position.set(0, 50, 100);
@@ -20,25 +20,65 @@ let microphone;
 let dataArray;
 let isListening = false;
 
-// Central star
-const starGeometry = new THREE.SphereGeometry(5, 32, 32);
-const starMaterial = new THREE.MeshBasicMaterial({
-    color: 0xffff00,
-    emissive: 0xffaa00,
-    emissiveIntensity: 1
+// Central star with gradient shader
+const starMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+        glowColor: { value: new THREE.Color(0xffff88) },
+        coreColor: { value: new THREE.Color(0xffffff) },
+        viewVector: { value: new THREE.Vector3() }
+    },
+    vertexShader: `
+        varying vec3 vNormal;
+        varying vec3 vPositionNormal;
+        void main() {
+            vNormal = normalize(normalMatrix * normal);
+            vPositionNormal = normalize((modelViewMatrix * vec4(position, 1.0)).xyz);
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    `,
+    fragmentShader: `
+        uniform vec3 glowColor;
+        uniform vec3 coreColor;
+        varying vec3 vNormal;
+        varying vec3 vPositionNormal;
+        void main() {
+            float intensity = pow(0.7 - dot(vNormal, vPositionNormal), 2.0);
+            vec3 color = mix(coreColor, glowColor, intensity);
+            gl_FragColor = vec4(color, 1.0);
+        }
+    `,
+    side: THREE.FrontSide,
+    blending: THREE.AdditiveBlending,
+    transparent: true
 });
+
+const starGeometry = new THREE.SphereGeometry(1.5, 32, 32);
 const star = new THREE.Mesh(starGeometry, starMaterial);
 scene.add(star);
 
-// Star glow
-const glowGeometry = new THREE.SphereGeometry(8, 32, 32);
-const glowMaterial = new THREE.MeshBasicMaterial({
-    color: 0xffaa00,
-    transparent: true,
-    opacity: 0.3
-});
-const starGlow = new THREE.Mesh(glowGeometry, glowMaterial);
-scene.add(starGlow);
+// Create soft glow layers around the star
+const glowLayers = [];
+const numLayers = 5;
+
+for (let i = 0; i < numLayers; i++) {
+    const size = 3 + i * 4;
+    const glowGeometry = new THREE.SphereGeometry(size, 32, 32);
+    const glowMaterial = new THREE.MeshBasicMaterial({
+        color: new THREE.Color().setHSL(0.1, 0.8, 0.7),
+        transparent: true,
+        opacity: 0.1,
+        blending: THREE.AdditiveBlending,
+        side: THREE.BackSide,
+        depthWrite: false
+    });
+    const glowSphere = new THREE.Mesh(glowGeometry, glowMaterial);
+    glowLayers.push(glowSphere);
+    scene.add(glowSphere);
+}
+
+// Add point light for extra glow effect
+const starLight = new THREE.PointLight(0xffff88, 2, 100);
+scene.add(starLight);
 
 // Galaxy parameters
 const galaxyParams = {
@@ -81,13 +121,13 @@ const generateGalaxy = () => {
         const radius = Math.random() * galaxyParams.radius;
         const spinAngle = radius * galaxyParams.spin;
         const branchAngle = (i % galaxyParams.branches) / galaxyParams.branches * Math.PI * 2;
-
+        
         const randomX = Math.pow(Math.random(), galaxyParams.randomnessPower) * (Math.random() < 0.5 ? 1 : -1) * galaxyParams.randomness * radius;
         const randomY = Math.pow(Math.random(), galaxyParams.randomnessPower) * (Math.random() < 0.5 ? 1 : -1) * galaxyParams.randomness * radius;
         const randomZ = Math.pow(Math.random(), galaxyParams.randomnessPower) * (Math.random() < 0.5 ? 1 : -1) * galaxyParams.randomness * radius;
 
         positions[i3] = Math.cos(branchAngle + spinAngle) * radius + randomX;
-        positions[i3 + 1] = randomY;
+        positions[i3 + 1] = randomY * 0.1;
         positions[i3 + 2] = Math.sin(branchAngle + spinAngle) * radius + randomZ;
 
         // Color
@@ -106,15 +146,29 @@ const generateGalaxy = () => {
     galaxyGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     galaxyGeometry.setAttribute('scale', new THREE.BufferAttribute(scales, 1));
 
+    // Create circular texture for particles
+    const canvas = document.createElement('canvas');
+    canvas.width = 16;
+    canvas.height = 16;
+    const context = canvas.getContext('2d');
+    const gradient = context.createRadialGradient(8, 8, 0, 8, 8, 8);
+    gradient.addColorStop(0, 'rgba(255,255,255,1)');
+    gradient.addColorStop(0.4, 'rgba(255,255,255,0.8)');
+    gradient.addColorStop(1, 'rgba(255,255,255,0)');
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 16, 16);
+    const texture = new THREE.CanvasTexture(canvas);
+    
     // Material
     galaxyMaterial = new THREE.PointsMaterial({
-        size: galaxyParams.size * 100,
+        size: galaxyParams.size * 50,
         sizeAttenuation: true,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
         vertexColors: true,
         transparent: true,
-        opacity: 0.8
+        opacity: 0.9,
+        map: texture
     });
 
     // Points
@@ -124,33 +178,27 @@ const generateGalaxy = () => {
 
 generateGalaxy();
 
-// Nebula clouds
-const nebulaMaterial = new THREE.MeshBasicMaterial({
-    color: 0x4444ff,
-    transparent: true,
-    opacity: 0.05,
-    side: THREE.DoubleSide
-});
+// Add some bright background stars
+const bgStarGeometry = new THREE.BufferGeometry();
+const bgStarCount = 5000;
+const bgPositions = new Float32Array(bgStarCount * 3);
 
-for (let i = 0; i < 10; i++) {
-    const nebulaGeometry = new THREE.SphereGeometry(
-        Math.random() * 20 + 10,
-        8,
-        8
-    );
-    const nebula = new THREE.Mesh(nebulaGeometry, nebulaMaterial);
-    nebula.position.set(
-        (Math.random() - 0.5) * 200,
-        (Math.random() - 0.5) * 50,
-        (Math.random() - 0.5) * 200
-    );
-    nebula.scale.set(
-        Math.random() + 1,
-        Math.random() * 0.5 + 0.5,
-        Math.random() + 1
-    );
-    scene.add(nebula);
+for (let i = 0; i < bgStarCount * 3; i += 3) {
+    bgPositions[i] = (Math.random() - 0.5) * 1000;
+    bgPositions[i + 1] = (Math.random() - 0.5) * 1000;
+    bgPositions[i + 2] = (Math.random() - 0.5) * 1000;
 }
+
+bgStarGeometry.setAttribute('position', new THREE.BufferAttribute(bgPositions, 3));
+const bgStarMaterial = new THREE.PointsMaterial({
+    color: 0xffffff,
+    size: 1,
+    sizeAttenuation: false,
+    transparent: true,
+    opacity: 0.5
+});
+const bgStars = new THREE.Points(bgStarGeometry, bgStarMaterial);
+scene.add(bgStars);
 
 // Create start button
 const button = document.createElement('button');
@@ -227,11 +275,34 @@ function animate() {
         // Pulse star based on bass
         const starScale = 1 + bass * 2;
         star.scale.set(starScale, starScale, starScale);
-        starGlow.scale.set(starScale * 1.5, starScale * 1.5, starScale * 1.5);
         
-        // Update star brightness
-        starMaterial.emissiveIntensity = 1 + bass * 2;
-        glowMaterial.opacity = 0.3 + bass * 0.5;
+        // Update star shader uniforms
+        starMaterial.uniforms.viewVector.value = camera.position;
+        const colorIntensity = 1 + bass * 0.5;
+        starMaterial.uniforms.glowColor.value.setRGB(colorIntensity, colorIntensity * 0.9, colorIntensity * 0.5);
+        
+        // Dramatic light pulsing
+        starLight.intensity = 1 + bass * 10;
+        
+        // Animate soft glow layers based on frequency
+        const midFreq = dataArray.slice(40, 80).reduce((a, b) => a + b) / 40 / 255;
+        const highFreq = dataArray.slice(80, 120).reduce((a, b) => a + b) / 40 / 255;
+        
+        glowLayers.forEach((glow, index) => {
+            // Pulse size gently
+            const baseSize = 3 + index * 4;
+            const pulseSize = baseSize + (bass * 2 + midFreq * 1.5) * (index + 1) * 0.5;
+            glow.scale.set(pulseSize / baseSize, pulseSize / baseSize, pulseSize / baseSize);
+            
+            // Shift colors based on frequency ranges
+            const hue = 0.05 + bass * 0.1 + index * 0.02; // Warm yellows to oranges
+            const saturation = 0.8 - index * 0.1;
+            const lightness = 0.7 + highFreq * 0.2;
+            glow.material.color.setHSL(hue, saturation, lightness);
+            
+            // Vary opacity based on volume
+            glow.material.opacity = 0.05 + avgVolume * 0.15 - index * 0.01;
+        })
         
         // Make galaxy particles dance
         if (galaxyGeometry) {
@@ -239,14 +310,17 @@ function animate() {
             const scales = galaxyGeometry.attributes.scale.array;
             
             for (let i = 0; i < scales.length; i++) {
-                scales[i] = Math.random() * (1 + avgVolume * 2);
+                scales[i] = Math.random() * (1 + avgVolume * 5);
             }
             galaxyGeometry.attributes.scale.needsUpdate = true;
+            
+            // Pulse galaxy brightness
+            galaxyMaterial.opacity = 0.6 + avgVolume * 0.4;
         }
         
-        // Speed up rotation with volume
+        // Speed up rotation with volume - more dramatic
         if (galaxy) {
-            galaxy.rotation.y += avgVolume * 0.01;
+            galaxy.rotation.y += avgVolume * 0.03;
         }
     }
     
