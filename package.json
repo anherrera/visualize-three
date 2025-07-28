@@ -8,6 +8,8 @@
   },
   "scripts": {
     "dev": "npx vite",
-    "build": "vite build"
+    "build": "vite build",
+    "preview": "vite preview",
+    "deploy": "npm run build && npx gh-pages -d dist"
   }
 }

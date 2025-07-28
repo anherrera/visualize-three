@@ -3,12 +3,6 @@ import { resolve } from 'path';
 
 export default defineConfig({
   base: '/visualize-three/',
-  resolve: {
-    alias: {
-      'three': 'three',
-      'three/addons': 'three/examples/jsm'
-    }
-  },
   build: {
     rollupOptions: {
       input: {
